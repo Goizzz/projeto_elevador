@@ -1,0 +1,4 @@
+colorzero==2.0
+gpiozero==2.0.1.post3
+RPi.GPIO==0.7.1
+setuptools==84.0.0
