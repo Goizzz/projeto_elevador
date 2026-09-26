@@ -4,19 +4,20 @@ import sys
 import gpio_module as gpio
 
 def tratar_sigint(signum, frame):
-    print("\n[AVISO] Encerrando o programa com segurança...")
+    print("\n[AVISO] Sinal SIGINT recebido. Iniciando encerramento seguro...")
     gpio.parar_elevador()
     gpio.limpar_gpio()
+    print("[AVISO] Encerramento concluído. Saindo.")
     sys.exit(0)
 
 def imprimir_estado():
+    print("\n[LOG] Coletando estado atual dos sensores...")
     pos_pulsos = gpio.obter_posicao_encoder()
     pos_mm = pos_pulsos
     cortina = gpio.obter_estado_cortina()
     sensor = gpio.obter_estado_sensor_andar()
     duty_atual, dir_atual = gpio.obter_estado_motor()
-    
-    print("\n--- ESTADO ATUAL (CABINE 1) ---")
+    print("--- ESTADO ATUAL (CABINE 1) ---")
     print(f"Posição: {pos_pulsos} pulsos ({pos_mm} mm)")
     print(f"Motor: Direção '{dir_atual}' a {duty_atual}% de potência")
     print(f"Cortina de Luz: {'Obstruída' if cortina else 'Livre'}")
@@ -29,7 +30,6 @@ def menu_acionamento_direto():
     if direcao not in ['livre', 'subir', 'descer', 'freio']:
         print("[ERRO] Direção inválida inserida!")
         return
-        
     try:
         duty = float(input("Duty cycle (0 a 100): "))
         if duty < 0 or duty > 100:
@@ -38,56 +38,46 @@ def menu_acionamento_direto():
     except ValueError:
         print("[ERRO] Valor numérico inválido inserida!")
         return
-    
-    print(f"[LOG] Tentando acionar motor direto: {direcao} a {duty}%")
+    print(f"[LOG] Iniciando acionamento direto: {direcao} a {duty}%")
     gpio.acionar_motor(direcao, duty)
-    print(f"Comando enviado: Motor em modo '{direcao}' com {duty}%.")
+    print(f"[SUCESSO] Comando enviado: Motor em modo '{direcao}' com {duty}%.")
 
 def menu_chamar_elevador():
+    print("\n[LOG] Acessando menu de malha fechada.")
     try:
-        andar = int(input("\nDigite o andar de destino (0, 1 ou 2): "))
+        andar = int(input("Digite o andar de destino (0, 1 ou 2): "))
         if andar not in [0, 1, 2]:
             print("[ERRO] Andar inválido! Escolha 0, 1 ou 2.")
             return
     except ValueError:
         print("[ERRO] Entrada inválida!")
         return
-    
     posicoes_nominais = {0: 0, 1: 3000, 2: 6000}
     alvo_pulsos = posicoes_nominais[andar]
     pos_inicial = gpio.obter_posicao_encoder()
-    
     if abs(alvo_pulsos - pos_inicial) <= 10:
-        print("[LOG] A cabine já está nivelada neste andar.")
+        print(f"[LOG] A cabine já está nivelada neste andar. Posição atual: {pos_inicial}")
         return
-
     print(f"[LOG] Iniciando movimento para o Andar {andar} (Alvo: {alvo_pulsos} pulsos, Posição Atual: {pos_inicial})...")
-    
     duty_min = 40.0 
     duty_max = 100.0
     zona_aceleracao = 600
     zona_desaceleracao = 800
     tolerancia = 10
-    
     contador_logs = 0
-
     while True:
         pos_atual = gpio.obter_posicao_encoder()
         erro = alvo_pulsos - pos_atual
         distancia_percorrida = abs(pos_atual - pos_inicial)
-        
         if pos_atual < -50 or pos_atual > 6050:
             gpio.acionar_motor('freio', 0)
             print(f"\n[FALHA GRAVE] Fim de curso atingido! Posição: {pos_atual}. Parada de emergência.")
             break
-            
         if abs(erro) <= tolerancia:
             gpio.acionar_motor('freio', 0)
             print(f"\n[LOG] Destino alcançado! Posição final: {pos_atual} pulsos. Erro: {erro}")
             break
-            
         direcao = 'subir' if erro > 0 else 'descer'
-        
         if distancia_percorrida < zona_aceleracao:
             fator = distancia_percorrida / zona_aceleracao
             duty = duty_min + (duty_max - duty_min) * fator
@@ -101,30 +91,25 @@ def menu_chamar_elevador():
             fase_atual = "Velocidade Maxima"
             
         duty = max(duty_min, min(duty_max, duty))
-        
         if contador_logs % 25 == 0:
             print(f"[TELEMETRIA] Pos: {pos_atual} | Erro: {erro} | Fase: {fase_atual} | Duty: {duty:.1f}% | Dir: {direcao}")
-            
         gpio.acionar_motor(direcao, duty)
-        
         contador_logs += 1
         time.sleep(0.02)
 
 def main():
+    print("[LOG] Registrando handler de sinais (SIGINT)...")
     signal.signal(signal.SIGINT, tratar_sigint)
-    
     print("[LOG] Iniciando aplicação...")
     gpio.inicializar_hardware()
-
     while True:
         print("\n=== CONTROLE DO ELEVADOR ===")
         print("1. Chamar elevador para um andar (Malha Fechada)")
         print("2. Acionamento direto do motor (Malha Aberta)")
         print("3. Ver estado atual dos sensores e posição")
         print("0. Sair")
-        
         opcao = input("Escolha uma opção: ")
-        
+        print(f"[LOG INPUT] Opção escolhida: {opcao}")
         if opcao == '1':
             menu_chamar_elevador()
         elif opcao == '2':
@@ -132,10 +117,10 @@ def main():
         elif opcao == '3':
             imprimir_estado()
         elif opcao == '0':
+            print("[LOG] Opção 0 selecionada. Encerrando.")
             tratar_sigint(None, None)
         else:
             print("[ERRO] Opção inválida inserida no menu.")
-        
         time.sleep(0.1)
 
 if __name__ == '__main__':
