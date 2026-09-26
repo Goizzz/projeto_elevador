@@ -27,18 +27,19 @@ def menu_acionamento_direto():
     print("\n--- ACIONAMENTO DIRETO ---")
     direcao = input("Direção (livre|subir|descer|freio): ").strip().lower()
     if direcao not in ['livre', 'subir', 'descer', 'freio']:
-        print("Direção inválida!")
+        print("[ERRO] Direção inválida inserida!")
         return
         
     try:
         duty = float(input("Duty cycle (0 a 100): "))
         if duty < 0 or duty > 100:
-            print("O duty cycle deve estar entre 0 e 100!")
+            print("[ERRO] O duty cycle deve estar entre 0 e 100!")
             return
     except ValueError:
-        print("Valor numérico inválido!")
+        print("[ERRO] Valor numérico inválido inserida!")
         return
     
+    print(f"[LOG] Tentando acionar motor direto: {direcao} a {duty}%")
     gpio.acionar_motor(direcao, duty)
     print(f"Comando enviado: Motor em modo '{direcao}' com {duty}%.")
 
@@ -46,10 +47,10 @@ def menu_chamar_elevador():
     try:
         andar = int(input("\nDigite o andar de destino (0, 1 ou 2): "))
         if andar not in [0, 1, 2]:
-            print("Andar inválido! O modelo reduzido possui andares 0, 1 e 2.")
+            print("[ERRO] Andar inválido! Escolha 0, 1 ou 2.")
             return
     except ValueError:
-        print("Entrada inválida!")
+        print("[ERRO] Entrada inválida!")
         return
     
     posicoes_nominais = {0: 0, 1: 3000, 2: 6000}
@@ -57,16 +58,18 @@ def menu_chamar_elevador():
     pos_inicial = gpio.obter_posicao_encoder()
     
     if abs(alvo_pulsos - pos_inicial) <= 10:
-        print("A cabine já está nivelada neste andar.")
+        print("[LOG] A cabine já está nivelada neste andar.")
         return
 
-    print(f"Iniciando movimento para o Andar {andar} (Alvo: {alvo_pulsos} pulsos)...")
+    print(f"[LOG] Iniciando movimento para o Andar {andar} (Alvo: {alvo_pulsos} pulsos, Posição Atual: {pos_inicial})...")
     
-    duty_min = 15.0
+    duty_min = 40.0 
     duty_max = 100.0
     zona_aceleracao = 600
     zona_desaceleracao = 800
     tolerancia = 10
+    
+    contador_logs = 0
 
     while True:
         pos_atual = gpio.obter_posicao_encoder()
@@ -75,12 +78,12 @@ def menu_chamar_elevador():
         
         if pos_atual < -50 or pos_atual > 6050:
             gpio.acionar_motor('freio', 0)
-            print("\n[ERRO] Fim de curso atingido! Parada de emergência.")
+            print(f"\n[FALHA GRAVE] Fim de curso atingido! Posição: {pos_atual}. Parada de emergência.")
             break
             
         if abs(erro) <= tolerancia:
             gpio.acionar_motor('freio', 0)
-            print(f"\nDestino alcançado! Posição final: {pos_atual} pulsos.")
+            print(f"\n[LOG] Destino alcançado! Posição final: {pos_atual} pulsos. Erro: {erro}")
             break
             
         direcao = 'subir' if erro > 0 else 'descer'
@@ -88,21 +91,29 @@ def menu_chamar_elevador():
         if distancia_percorrida < zona_aceleracao:
             fator = distancia_percorrida / zona_aceleracao
             duty = duty_min + (duty_max - duty_min) * fator
+            fase_atual = "Aceleracao"
         elif abs(erro) < zona_desaceleracao:
             fator = abs(erro) / zona_desaceleracao
             duty = duty_min + (duty_max - duty_min) * fator
+            fase_atual = "Desaceleracao"
         else:
             duty = duty_max
+            fase_atual = "Velocidade Maxima"
             
         duty = max(duty_min, min(duty_max, duty))
         
+        if contador_logs % 25 == 0:
+            print(f"[TELEMETRIA] Pos: {pos_atual} | Erro: {erro} | Fase: {fase_atual} | Duty: {duty:.1f}% | Dir: {direcao}")
+            
         gpio.acionar_motor(direcao, duty)
+        
+        contador_logs += 1
         time.sleep(0.02)
 
 def main():
     signal.signal(signal.SIGINT, tratar_sigint)
     
-    print("Inicializando sistema GPIO...")
+    print("[LOG] Iniciando aplicação...")
     gpio.inicializar_hardware()
 
     while True:
@@ -123,7 +134,7 @@ def main():
         elif opcao == '0':
             tratar_sigint(None, None)
         else:
-            print("Opção inválida.")
+            print("[ERRO] Opção inválida inserida no menu.")
         
         time.sleep(0.1)
 

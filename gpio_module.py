@@ -81,9 +81,13 @@ def inicializar_hardware():
     GPIO.add_event_detect(PIN_SENSOR, GPIO.BOTH, callback=_callback_sensor)
     
     acionar_motor('livre', 0)
+    print("[LOG] Hardware inicializado e configurado.")
 
 def acionar_motor(direcao, duty):
     global estado_motor_duty, estado_motor_dir, pwm_motor
+    
+    if direcao != estado_motor_dir or duty != estado_motor_duty:
+        print(f"[LOG MOTOR] Alterando estado: Direção={direcao} | Duty={duty:.2f}%")
     
     if direcao == 'livre':
         GPIO.output(PIN_DIR1, GPIO.LOW)
@@ -105,9 +109,11 @@ def acionar_motor(direcao, duty):
     estado_motor_dir = direcao
 
 def parar_elevador():
+    print("[LOG] Comando de parada de emergência recebido.")
     acionar_motor('freio', 0)
 
 def limpar_gpio():
+    print("[LOG] Limpando pinos GPIO.")
     if pwm_motor is not None:
         pwm_motor.stop()
     GPIO.cleanup()
